@@ -34,14 +34,24 @@ docker run --env-file "copy path for your .env file" -p 8000:8000 rajgen/rag-app
 or directly search local on your browser it generally pop ups
 
 ensure that your .env file has no extra spaces it should be in the format 
+
+
+
 GROQ_API_KEY=key
+
 LLM_for_chat=model_name
+
 GEMINI_API_KEY=key
+
 GOOGLE_API_KEY=key
+
 EMBEDDING_MODEL=model_name
+
 CHROMA_HOST=chromadb
-CHROMA_PORT=8000
+
 ANONYMIZED_TELEMETRY=False 
+
+
 
 not any extra space and quotes
 
