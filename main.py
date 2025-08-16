@@ -1,0 +1,622 @@
+
+
+
+# #############################################################
+#  to delete the old data and metedata
+# #############################################################
+
+import os
+import shutil
+
+db_path = "rag_app.db"
+chroma_dir = "chroma_db"
+
+if os.path.exists(db_path):
+    os.remove(db_path)
+    print(f"✅ Removed existing database file: {db_path}")
+
+if os.path.isdir(chroma_dir):
+    shutil.rmtree(chroma_dir)
+    print(f"✅ Removed existing ChromaDB dir: {chroma_dir}")
+
+
+
+
+
+
+
+
+
+from fastapi import FastAPI,  HTTPException
+from pydantic_models import QueryInput, QueryResponse, DocumentInfo, DeleteFileRequest
+from langchain_utils import get_rag_chain
+from routes_upload import router as upload_router
+from routes_metadata import router as metadata_router
+from dotenv import load_dotenv
+from datetime import datetime
+
+
+from db_utils import (
+    insert_application_logs, get_chat_history, get_all_documents,
+    delete_document_record,
+)
+from chroma_utils import  delete_doc_from_chroma
+
+import  uuid, logging
+from fastapi.responses import HTMLResponse
+load_dotenv()
+chat_model = os.getenv("LLM_for_chat", "openai/gpt-oss-120b")
+
+logging.basicConfig(filename="app.log", level=logging.INFO)
+app = FastAPI()
+app.include_router(upload_router)
+app.include_router(metadata_router, prefix="/api", tags=["metadata"]) 
+print("✅ use this url to access the app http://localhost:8000  or http://127.0.0.1:8000/ ✅ ")
+
+
+
+
+
+
+
+# ────────────────────────── CHAT ───────────────────────────
+@app.post("/chat", response_model=QueryResponse)
+def chat(query: QueryInput):
+    session_id = query.session_id or str(uuid.uuid4())
+    logging.info(
+        "session=%s question=%s model=%s",
+        session_id, query.question, chat_model,
+    )
+
+    chat_history = get_chat_history(session_id)
+    chain = get_rag_chain(chat_model)
+    answer = chain.invoke(
+        {"input": query.question, "chat_history": chat_history}
+    )["answer"]
+
+    insert_application_logs(session_id, query.question, answer, chat_model)
+    return QueryResponse(
+        answer=answer,
+        session_id=session_id,
+        model=chat_model,
+    )
+
+
+
+
+# ───────────────────────── LIST / DELETE DOCS ──────────────
+@app.get("/list-docs", response_model=list[DocumentInfo])
+def list_documents():
+    return get_all_documents()
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@app.post("/delete-doc")
+def delete_document(req: DeleteFileRequest):
+    if delete_doc_from_chroma(req.file_id) and delete_document_record(req.file_id):
+        return {"message": f"Deleted file_id {req.file_id}"}
+    raise HTTPException(500, "Delete failed")
+
+# ────────────────────────── FRONT-END ──────────────────────
+@app.get("/", response_class=HTMLResponse)
+def ui():
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Document Chat AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 40px;
+      padding: 20px 0;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 300;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .section {
+      background: white;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      margin-bottom: 25px;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+    }
+
+    .section-header {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white;
+      padding: 20px 25px;
+      font-size: 1.3rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-content {
+      padding: 25px;
+    }
+
+    /* Upload Section */
+    .upload-area {
+      border: 3px dashed #e0e7ff;
+      border-radius: 12px;
+      padding: 40px 20px;
+      text-align: center;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      background: #f8faff;
+    }
+
+    .upload-area:hover {
+      border-color: #4f46e5;
+      background: #f0f4ff;
+      transform: translateY(-2px);
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 15px;
+      border: 2px solid #e0e7ff;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border-color 0.3s ease;
+      background: white;
+    }
+
+    input[type="file"]:focus {
+      outline: none;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+
+    /* Buttons */
+    button {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin: 5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(79, 70, 229, 0.4);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    /* Stats Box */
+    .stats-box { 
+      background: linear-gradient(135deg, #f8faff, #e0e7ff);
+      padding: 20px;
+      border-radius: 12px;
+      border-left: 4px solid #4f46e5;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    /* Document Items */
+    .doc-item { 
+      background: #ffffff;
+      border: 1px solid #e0e7ff;
+      padding: 20px;
+      margin: 15px 0;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+
+    .doc-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+      border-color: #4f46e5;
+    }
+
+    .doc-header { 
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 8px;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .doc-metadata { 
+      font-size: 13px;
+      color: #64748b;
+      margin: 8px 0;
+      background: #f1f5f9;
+      padding: 8px 12px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    .doc-actions { 
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .doc-actions button { 
+      margin: 0;
+      padding: 8px 16px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    .doc-actions button:first-child {
+      background: linear-gradient(135deg, #06b6d4, #0891b2);
+    }
+
+    .doc-actions button:last-child {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+    }
+
+    /* Chat Section */
+    #messages { 
+      border: 2px solid #e0e7ff;
+      height: 350px;
+      overflow-y: auto;
+      padding: 20px;
+      background: #f8faff;
+      border-radius: 12px;
+      margin-bottom: 15px;
+      line-height: 1.6;
+    }
+
+    #messages p {
+      margin: 10px 0;
+      padding: 10px 15px;
+      border-radius: 8px;
+      max-width: 85%;
+    }
+
+    #messages p:nth-child(odd) {
+      background: #e0f2fe;
+      margin-left: auto;
+      text-align: right;
+    }
+
+    #messages p:nth-child(even) {
+      background: #ffffff;
+      border: 1px solid #e0e7ff;
+    }
+
+    .chat-input-container {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    input[type="text"] { 
+      flex: 1;
+      padding: 15px 20px;
+      border: 2px solid #e0e7ff;
+      border-radius: 12px;
+      font-size: 16px;
+      transition: all 0.3s ease;
+      background: white;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+
+    .send-button {
+      background: linear-gradient(135deg, #10b981, #059669) !important;
+      padding: 15px 25px !important;
+      border-radius: 12px !important;
+      margin: 0 !important;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .container {
+        padding: 10px;
+      }
+      
+      .section-content {
+        padding: 15px;
+      }
+      
+      .header h1 {
+        font-size: 2rem;
+      }
+      
+      .chat-input-container {
+        flex-direction: column;
+      }
+      
+      .doc-actions {
+        flex-direction: column;
+      }
+    }
+
+    /* Loading Animation */
+    .loading {
+      display: inline-block;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    /* Success/Error Messages */
+    .message-success {
+      background: #dcfce7;
+      color: #166534;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left: 4px solid #22c55e;
+      margin: 10px 0;
+    }
+
+    .message-error {
+      background: #fef2f2;
+      color: #dc2626;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left: 4px solid #ef4444;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 Document Chat AI</h1>
+      <p>Upload documents and chat with your content using AI</p>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="section">
+      <div class="section-header">
+        📤 Upload Documents
+      </div>
+      <div class="section-content">
+        <div class="upload-area">
+          <div style="font-size: 2rem; margin-bottom: 15px;">📁</div>
+          <input type="file" id="files" multiple>
+          <p style="margin-top: 15px; color: #64748b;">Select up to 20 files (PDF, DOCX, TXT, HTML)</p>
+        </div>
+        <div style="text-align: center; margin-top: 20px;">
+          <button onclick="uploadMany()">🚀 Upload Documents</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Statistics Section -->
+    <div class="section">
+      <div class="section-header">
+        📊 Vector Store Statistics
+      </div>
+      <div class="section-content">
+        <div id="stats" class="stats-box">
+          <span class="loading">Loading statistics...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Documents Section -->
+    <div class="section">
+      <div class="section-header">
+        📚 Indexed Documents
+      </div>
+      <div class="section-content">
+        <div style="margin-bottom: 20px;">
+          <button onclick="refreshDocs()">🔄 Refresh List</button>
+        </div>
+        <div id="docs">
+          <span class="loading">Loading documents...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Section -->
+    <div class="section">
+      <div class="section-header">
+        💬 Chat with CHOTU
+      </div>
+      <div class="section-content">
+        <div id="messages"></div>
+        <div class="chat-input-container">
+          <input type="text" id="q" placeholder="Ask something about your documents..." onkeypress="if(event.key==='Enter')send()">
+          <button class="send-button" onclick="send()">📨 Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ---------- upload ---------- */
+async function uploadMany(){
+  const list = document.getElementById('files').files;
+  if (list.length === 0) return alert('Pick files first');
+  if (list.length > 20) return alert('Max 20 files per request');
+  
+  const fd = new FormData();
+  [...list].forEach(f => fd.append('files', f));
+  
+  const res = await fetch('/upload-docs', { method:'POST', body: fd });
+  const data = await res.json();
+  
+  if (data.uploaded && data.uploaded.length > 0) {
+    alert(`✅ Successfully uploaded ${data.uploaded.length} files`);
+  }
+  if (data.failed && data.failed.length > 0) {
+    alert(`❌ Failed to upload ${data.failed.length} files`);
+  }
+  
+  refreshDocs();
+}
+
+/* ---------- docs list with metadata ---------- */
+async function refreshDocs(){
+  try {
+    const res = await fetch('/api/documents/metadata');
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      displayDocuments(data.documents, `All Documents (${data.total_documents})`);
+      
+      // Update stats
+      const stats = data.vectorstore_stats;
+      document.getElementById('stats').innerHTML = `
+        <strong>📊 Vector Store Stats:</strong><br>
+        • Total Documents: ${stats.total_documents || 0}<br>
+        • Total Chunks: ${stats.total_chunks || 0}<br>
+        • Average Chunks per Doc: ${stats.total_documents ? Math.round(stats.total_chunks / stats.total_documents) : 0}
+      `;
+    } else {
+      throw new Error(data.error || 'Failed to load documents');
+    }
+  } catch (error) {
+    document.getElementById('docs').innerHTML = `<p>❌ Error loading documents: ${error.message}</p>`;
+  }
+}
+
+function displayDocuments(documents, title = 'Documents') {
+  const box = document.getElementById('docs');
+  
+  if (!documents.length) {
+    box.innerHTML = '<p><em>No documents found.</em></p>';
+    return;
+  }
+
+  let html = `<h3 style="margin-bottom: 20px; color: #1e293b;">${title}</h3>`;
+  
+  documents.forEach(doc => {
+    const fileId = doc.file_id;
+    const fileName = doc.source_file || 'Unknown';
+    const chunkCount = doc.chunk_count || 0;
+    
+    html += `<div class="doc-item">`;
+    html += `<div class="doc-header">📄 ${fileName}</div>`;
+    html += `<div class="doc-metadata">ID: ${fileId} | Chunks: ${chunkCount}</div>`;
+    html += `<div class="doc-actions">`;
+    html += `<button onclick="viewDocumentDetails(${fileId})">📋 Details</button>`;
+    html += `<button onclick="deleteDoc(${fileId})">🗑️ Delete</button>`;
+    html += `</div>`;
+    html += `</div>`;
+  });
+  
+  box.innerHTML = html;
+}
+
+/* ---------- view individual document details ---------- */
+async function viewDocumentDetails(fileId) {
+  try {
+    const res = await fetch(`/api/documents/${fileId}/metadata`);
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      const info = data.document_info;
+      alert(`📋 Document Details (ID: ${fileId})
+
+📄 Source File: ${info.source_file || 'Unknown'}
+📊 Chunk Count: ${info.chunk_count || 0}
+📈 Total Chunks: ${info.total_chunks || 0}
+✅ Exists: ${info.exists ? 'Yes' : 'No'}`);
+    } else {
+      alert(`❌ Error loading details: ${data.detail || 'Unknown error'}`);
+    }
+  } catch (error) {
+    alert(`❌ Failed to load document details: ${error.message}`);
+  }
+}
+
+/* ---------- delete document ---------- */
+async function deleteDoc(id){
+  if (!confirm(`Delete document ${id}?`)) return;
+  
+  const res = await fetch('/delete-doc', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({file_id:id})
+  });
+  const data = await res.json();
+  alert(data.message || data.error);
+  refreshDocs();
+}
+
+/* ---------- chat ---------- */
+async function send(){
+  const box = document.getElementById('q');
+  const msg = box.value.trim(); 
+  if (!msg) return;
+  
+  add(`You: ${msg}`);
+  
+  const r = await fetch('/chat', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({question:msg})
+    
+  });
+  const data = await r.json();
+  add(`AI: ${data.answer}`);
+  box.value = '';
+}
+
+function add(t){
+  const m = document.getElementById('messages');
+  m.innerHTML += `<p>${t}</p>`;
+  m.scrollTop = m.scrollHeight;
+}
+
+/* ---------- initialize on page load ---------- */
+window.onload = function() {
+  refreshDocs();
+};
+</script>
+</body>
+</html>
+"""
