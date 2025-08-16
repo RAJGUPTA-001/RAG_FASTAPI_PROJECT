@@ -35,6 +35,8 @@ or directly search local on your browser it generally pop ups
 
 ensure that your .env file has no extra spaces it should be in the format 
 
+"
+
 
 
 GROQ_API_KEY=key
@@ -52,6 +54,8 @@ CHROMA_HOST=chromadb
 ANONYMIZED_TELEMETRY=False 
 
 
+
+"
 
 not any extra space and quotes
 
