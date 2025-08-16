@@ -4,14 +4,22 @@ Made an application with RAG pipeline and using FastAPI for API calls ;Has docum
 
 
 # .env   file format
-GROQ_API_KEY="your key from groq for inference calls" 
+GROQ_API_KEY="your key from groq for inference calls"
+
 LLM_for_chat="openai/gpt-oss-120b or any model available on groq"
+
 GEMINI_API_KEY="your key from google gemini for embeddings"
+
 GOOGLE_API_KEY="your key from google gemini for embeddings"
+
 EMBEDDING_MODEL="gemini-embedding-001 or any other embedding model from gemini " // this one makes 768 dim embedding 
+
 CHROMA_HOST=chromadb
+
 CHROMA_PORT=8000
+
 ANONYMIZED_TELEMETRY=False 
+
 
 
 # for docker image
