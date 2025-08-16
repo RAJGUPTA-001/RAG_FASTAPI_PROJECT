@@ -1,7 +1,7 @@
 # RAG_FASTAPI_PROJECT
 Made an application with RAG pipeline and using FastAPI for API calls ;Has document upload feature and answer based on the context provided by the document 
 
-
+python version 3.11.9
 
 # .env   file format
 GROQ_API_KEY="your key from groq for inference calls"
