@@ -3,7 +3,7 @@ Made an application with RAG pipeline and using FastAPI for API calls ;Has docum
 
 
 
-#python version 3.11.9
+# python version 3.11.9
 
 # .env   file format
 GROQ_API_KEY="your key from groq for inference calls"
