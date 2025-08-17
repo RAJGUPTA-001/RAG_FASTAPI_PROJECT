@@ -1,5 +1,6 @@
 
-# RAG Document Retrieval and Query API
+# RAG Document Retrieval and Query API | live at https://rag-fastapi-project.onrender.com/ 
+# for docker image   https://hub.docker.com/repository/docker/rajgen/rag-app/tags/0.0.1/sha256-56928d54cecaa35fb933be9e12ba048d6a0a8f4a632888690b1ead08104da053
 
 A comprehensive **Retrieval-Augmented Generation (RAG)** system built with FastAPI that enables document upload, processing, and intelligent querying using vector embeddings and language models.
 
