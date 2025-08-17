@@ -351,28 +351,64 @@ docker run --env-file .env -p 8000:8000 rag-api
 
 ```yaml
 version: '3.8'
+
 services:
+  # ChromaDB service
   chromadb:
-    image: ghcr.io/chroma-core/chroma:latest
+    image: chromadb/chroma:latest
+    container_name: rag-chromadb
     ports:
       - "8001:8000"
     volumes:
       - chroma_data:/chroma/chroma
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    networks:
+      - rag-network
+    restart: unless-stopped
 
-  rag-api:
+  # Main RAG application
+  rag-app:
     build: .
+    container_name: rag-app
     ports:
       - "8000:8000"
+    volumes:
+      - app_data:/app/data
+      - chroma_local:/app/chroma_db
+      - ./uploads:/app/uploads
     environment:
+      # ChromaDB connection
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
-    env_file:
-      - .env
+      
+      # API Keys (set these in .env file)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      
+      # Model configuration
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-models/embedding-001}
+      - LLM_for_chat=${LLM_for_chat:-openai/gpt-oss-120b}
+      
+      # Application settings
+      - ANONYMIZED_TELEMETRY=False
     depends_on:
       - chromadb
+    networks:
+      - rag-network
+    restart: unless-stopped
 
 volumes:
   chroma_data:
+  chroma_local:
+  app_data:
+
+networks:
+  rag-network:
+    driver: bridge
+
 ```
 
 ## 🏗️ Architecture
@@ -484,13 +520,5 @@ echo $GROQ_API_KEY
 - Adjust chunk size in text splitter
 - Monitor system resources
 
-## 📞 Support
 
-For issues and questions:
-- Create an issue in the repository
-- Check the API documentation at `/docs`
-- Review the test cases for usage examples
 
----
-
-**Built with ❤️ using FastAPI, LangChain, ChromaDB, and Google Gemini**
