@@ -1,3 +1,4 @@
+python==3.11.9
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 langchain==0.3.27
@@ -16,6 +17,7 @@ pydantic==2.11.7
 google-genai
 dotenv==0.9.9
 dataclasses-json==0.6.7
+
 
 
 
